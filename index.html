@@ -303,28 +303,28 @@
                 for (let i = dataStartIndex; i < values.length; i++) {
                     const row = values[i];
                     
-                    if (row.length >= 19) {
+                    if (row.length >= 20) {
                         const rawStatus = row[0]?.toString() || '';
                         const status = rawStatus.trim().toLowerCase();
                         
                         // ONLY INCLUDE OPEN STORES
                         if (status === 'open') {
-                            const latQ = parseFloat(row[16]); // Column Q - Latitude
-                            const lngR = parseFloat(row[17]); // Column R - Longitude
+                            const lat = parseFloat(row[17]); // Column R - Latitude
+                            const lng = parseFloat(row[18]); // Column S - Longitude
                             
-                            if (!isNaN(latQ) && !isNaN(lngR)) {
+                            if (!isNaN(lat) && !isNaN(lng)) {
                                 const store = {
                                     status: 'Open',
                                     owner: row[1]?.toString().trim() || '',
-                                    retailer: row[8]?.toString().trim() || '',
-                                    storeNumber: row[10]?.toString().trim() || '',
-                                    storeName: row[11]?.toString().trim() || '',
-                                    address: row[12]?.toString().trim() || '',
-                                    city: row[13]?.toString().trim() || '',
-                                    state: row[14]?.toString().trim() || '',
-                                    zip: row[18]?.toString().trim() || '',
-                                    latitude: latQ,
-                                    longitude: lngR
+                                    retailer: row[9]?.toString().trim() || '',
+                                    storeNumber: row[11]?.toString().trim() || '',
+                                    storeName: row[12]?.toString().trim() || '',
+                                    address: row[13]?.toString().trim() || '',
+                                    city: row[14]?.toString().trim() || '',
+                                    state: row[15]?.toString().trim() || '',
+                                    zip: row[19]?.toString().trim() || '',
+                                    latitude: lat,
+                                    longitude: lng
                                 };
                                 stores.push(store);
                             }
