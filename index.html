@@ -248,15 +248,25 @@
                     setLoading(true);
                     setError('');
 
+                    // Try different approaches to access the sheet
                     const encodedSheetName = encodeURIComponent(CONFIG.SHEET_NAME);
-                    const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodedSheetName}?key=${CONFIG.API_KEY}`;
+                    let url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodedSheetName}?key=${CONFIG.API_KEY}`;
                     
                     console.log('🔍 Fetching from URL:', url);
                     
-                    const response = await fetch(url);
+                    let response = await fetch(url);
+                    
+                    // If that fails, try without sheet name (gets first sheet)
+                    if (!response.ok) {
+                        console.log('❌ First attempt failed, trying without sheet name...');
+                        url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/A:Z?key=${CONFIG.API_KEY}`;
+                        console.log('🔍 Trying URL:', url);
+                        response = await fetch(url);
+                    }
                     
                     if (!response.ok) {
                         const errorData = await response.json();
+                        console.log('❌ API Error:', errorData);
                         throw new Error(`Google Sheets API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
                     }
                     
@@ -269,6 +279,7 @@
 
                     const parsedStores = parseGoogleSheetsData(data.values);
                     console.log('🏪 Parsed stores:', parsedStores);
+                    console.log('📊 Total stores found:', parsedStores.length);
                     
                     setStores(parsedStores);
                     setLastUpdated(new Date());
