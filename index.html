@@ -317,41 +317,83 @@
                 // Process data rows (skip header row)
                 const dataStartIndex = headerRowIndex + 1;
                 
+                // Debug: Check first 5 rows to understand data structure
+                console.log('🔍 Checking first 5 data rows:');
+                for (let i = dataStartIndex; i < Math.min(dataStartIndex + 5, values.length); i++) {
+                    const row = values[i];
+                    console.log(`Row ${i}:`, {
+                        status: row[0],
+                        owner: row[1],
+                        retailer: row[9],
+                        storeNumber: row[11],
+                        storeName: row[12],
+                        lat: row[17],
+                        lng: row[18],
+                        fullRow: row
+                    });
+                }
+                
+                // Count different status values
+                const statusCounts = {};
+                let totalRowsProcessed = 0;
+                let rowsWithCoordinates = 0;
+                let openStoresFound = 0;
+                
                 // Process all data rows - FILTER FOR OPEN STATUS ONLY
                 for (let i = dataStartIndex; i < values.length; i++) {
                     const row = values[i];
+                    totalRowsProcessed++;
                     
                     if (row.length >= 20) {
                         const rawStatus = row[0]?.toString() || '';
                         const status = rawStatus.trim().toLowerCase();
                         
+                        // Count all status values
+                        statusCounts[status] = (statusCounts[status] || 0) + 1;
+                        
+                        const lat = parseFloat(row[17]); // Column R - Latitude
+                        const lng = parseFloat(row[18]); // Column S - Longitude
+                        
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            rowsWithCoordinates++;
+                        }
+                        
                         // ONLY INCLUDE OPEN STORES
                         if (status === 'open') {
-                            const lat = parseFloat(row[17]); // Column R - Latitude (NEW MAPPING)
-                            const lng = parseFloat(row[18]); // Column S - Longitude (NEW MAPPING)
+                            openStoresFound++;
                             
                             if (!isNaN(lat) && !isNaN(lng)) {
                                 const store = {
                                     status: 'Open',
                                     owner: row[1]?.toString().trim() || '',
-                                    retailer: row[9]?.toString().trim() || '',  // Column J - Retailer (NEW)
-                                    storeNumber: row[11]?.toString().trim() || '', // Column L - Store No. (NEW)
-                                    storeName: row[12]?.toString().trim() || '',   // Column M - Store Name (NEW)
-                                    address: row[13]?.toString().trim() || '',     // Column N - Street (NEW)
-                                    city: row[14]?.toString().trim() || '',        // Column O - City (NEW)
-                                    state: row[15]?.toString().trim() || '',       // Column P - State (NEW)
-                                    zip: row[19]?.toString().trim() || '',         // Column T - Zip (NEW)
+                                    retailer: row[9]?.toString().trim() || '',  // Column J - Retailer
+                                    storeNumber: row[11]?.toString().trim() || '', // Column L - Store No.
+                                    storeName: row[12]?.toString().trim() || '',   // Column M - Store Name
+                                    address: row[13]?.toString().trim() || '',     // Column N - Street
+                                    city: row[14]?.toString().trim() || '',        // Column O - City
+                                    state: row[15]?.toString().trim() || '',       // Column P - State
+                                    zip: row[19]?.toString().trim() || '',         // Column T - Zip
                                     latitude: lat,
                                     longitude: lng
                                 };
                                 stores.push(store);
+                            } else {
+                                console.log('❌ Open store without valid coordinates:', {
+                                    storeName: row[12],
+                                    lat: row[17],
+                                    lng: row[18]
+                                });
                             }
                         }
                     }
                 }
                 
-                console.log('🔍 Processed rows:', dataStartIndex, 'to', values.length);
-                console.log('🏪 Found', stores.length, 'open stores');
+                console.log('📊 Data processing summary:');
+                console.log('- Total rows processed:', totalRowsProcessed);
+                console.log('- Rows with coordinates:', rowsWithCoordinates);
+                console.log('- Open stores found:', openStoresFound);
+                console.log('- Status counts:', statusCounts);
+                console.log('- Final stores for map:', stores.length);
                 
                 return stores;
             };
