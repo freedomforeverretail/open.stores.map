@@ -327,9 +327,13 @@
                         retailer: row[9],
                         storeNumber: row[11],
                         storeName: row[12],
-                        lat: row[17],
-                        lng: row[18],
-                        fullRow: row
+                        col15: row[15],
+                        col16: row[16], 
+                        col17: row[17],
+                        col18: row[18],
+                        col19: row[19],
+                        col20: row[20],
+                        fullRow: row.slice(15, 21) // Show columns 15-20 to see coordinate area
                     });
                 }
                 
