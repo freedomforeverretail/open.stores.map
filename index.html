@@ -363,6 +363,11 @@
                             openStoresFound++;
                             
                             if (!isNaN(lat) && !isNaN(lng)) {
+                                console.log(`✅ Valid coordinates for store:`, {
+                                    name: row[12]?.toString().trim(),
+                                    lat: lat,
+                                    lng: lng
+                                });
                                 const store = {
                                     status: 'Open',
                                     owner: row[1]?.toString().trim() || '',
