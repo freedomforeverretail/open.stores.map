@@ -251,6 +251,8 @@
                     const encodedSheetName = encodeURIComponent(CONFIG.SHEET_NAME);
                     const url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodedSheetName}?key=${CONFIG.API_KEY}`;
                     
+                    console.log('🔍 Fetching from URL:', url);
+                    
                     const response = await fetch(url);
                     
                     if (!response.ok) {
@@ -259,12 +261,15 @@
                     }
                     
                     const data = await response.json();
+                    console.log('📊 Raw data received:', data);
                     
                     if (!data.values || data.values.length === 0) {
                         throw new Error('No data found in the specified sheet');
                     }
 
                     const parsedStores = parseGoogleSheetsData(data.values);
+                    console.log('🏪 Parsed stores:', parsedStores);
+                    
                     setStores(parsedStores);
                     setLastUpdated(new Date());
 
@@ -274,6 +279,7 @@
                     }
                     
                 } catch (err) {
+                    console.error('❌ Error fetching data:', err);
                     setError(err.message);
                 } finally {
                     setLoading(false);
