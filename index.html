@@ -165,7 +165,12 @@
             };
 
             const addMarkersToMap = (storeData) => {
-                if (!map || !window.google) return;
+                if (!map || !window.google) {
+                    console.log('❌ Cannot add markers - map or google not available');
+                    return;
+                }
+
+                console.log('🗺️ Adding markers for', storeData.length, 'stores');
 
                 // Clear existing markers
                 markers.forEach(marker => marker.setMap(null));
@@ -173,6 +178,12 @@
 
                 // Add new markers for OPEN stores only
                 storeData.forEach((store, index) => {
+                    console.log(`🔷 Creating marker ${index + 1}:`, {
+                        name: store.storeName,
+                        lat: store.latitude,
+                        lng: store.longitude
+                    });
+                    
                     const marker = new window.google.maps.Marker({
                         position: { lat: store.latitude, lng: store.longitude },
                         map: map,
@@ -187,56 +198,20 @@
                         }
                     });
 
-                    const infoWindow = new window.google.maps.InfoWindow({
-                        content: `
-                            <div style="padding: 12px; min-width: 220px; font-family: system-ui, sans-serif;">
-                                <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold; color: #1f2937;">${store.storeName}: ${store.storeNumber}</h3>
-                                <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: normal; color: #666;">${store.retailer}</h4>
-                                <p style="margin: 0 0 4px 0; font-size: 14px; color: #374151;">${store.address}</p>
-                                <p style="margin: 0 0 8px 0; font-size: 14px; color: #374151;">${store.city}, ${store.state} ${store.zip}</p>
-                                
-                                <div style="margin-top: 12px;">
-                                    <span style="background: #ECFDF5; color: #2C5134; padding: 6px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block;">OPEN</span>
-                                </div>
-                                
-                                <div style="margin-top: 12px; text-align: center;">
-                                    <a href="${CONFIG.RESERVE_URL}" target="_blank" style="background: #2C5134; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Reserve Now</a>
-                                </div>
-                            </div>
-                        `
-                    });
-
-                    marker.addListener('click', () => {
-                        // Close any open info windows
-                        markers.forEach(m => m.infoWindow && m.infoWindow.close());
-                        
-                        // Open this info window
-                        infoWindow.open(map, marker);
-                        marker.infoWindow = infoWindow;
-                        
-                        // Update side panel
-                        setSelectedStore(store);
-                    });
-
                     markers.push(marker);
                 });
 
+                console.log('🎯 Total markers created:', markers.length);
+                
                 // Fit map to show all open stores
                 if (markers.length > 0) {
                     const bounds = new window.google.maps.LatLngBounds();
                     markers.forEach(marker => bounds.extend(marker.getPosition()));
                     
                     map.fitBounds(bounds);
-                    
-                    const listener = window.google.maps.event.addListener(map, 'idle', function() {
-                        const currentZoom = map.getZoom();
-                        if (currentZoom > 8) map.setZoom(8);
-                        if (currentZoom < 3) map.setZoom(3);
-                        window.google.maps.event.removeListener(listener);
-                    });
+                    console.log('📐 Map bounds fitted to markers');
                 } else {
-                    map.setCenter({ lat: 39.8283, lng: -98.5795 });
-                    map.setZoom(4);
+                    console.log('❌ No markers to fit bounds to');
                 }
             };
 
