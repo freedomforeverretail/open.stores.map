@@ -330,8 +330,8 @@
                         // Count all status values
                         statusCounts[status] = (statusCounts[status] || 0) + 1;
                         
-                        const lat = parseFloat(row[17]); // Column R - Latitude
-                        const lng = parseFloat(row[18]); // Column S - Longitude
+                        const lat = parseFloat(row[16]); // Column Q - Latitude
+                        const lng = parseFloat(row[17]); // Column R - Longitude
                         
                         if (!isNaN(lat) && !isNaN(lng)) {
                             rowsWithCoordinates++;
@@ -364,8 +364,8 @@
                             } else {
                                 console.log('❌ Open store without valid coordinates:', {
                                     storeName: row[12],
-                                    lat: row[17],
-                                    lng: row[18]
+                                    lat: row[16],
+                                    lng: row[17]
                                 });
                             }
                         }
