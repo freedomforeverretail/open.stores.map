@@ -198,6 +198,37 @@
                         }
                     });
 
+                    const infoWindow = new window.google.maps.InfoWindow({
+                        content: `
+                            <div style="padding: 12px; min-width: 220px; font-family: system-ui, sans-serif;">
+                                <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: bold; color: #1f2937;">${store.storeName}: ${store.storeNumber}</h3>
+                                <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: normal; color: #666;">${store.retailer}</h4>
+                                <p style="margin: 0 0 4px 0; font-size: 14px; color: #374151;">${store.address}</p>
+                                <p style="margin: 0 0 8px 0; font-size: 14px; color: #374151;">${store.city}, ${store.state} ${store.zip}</p>
+                                
+                                <div style="margin-top: 12px;">
+                                    <span style="background: #ECFDF5; color: #2C5134; padding: 6px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-block;">OPEN</span>
+                                </div>
+                                
+                                <div style="margin-top: 12px; text-align: center;">
+                                    <a href="${CONFIG.RESERVE_URL}" target="_blank" style="background: #2C5134; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Reserve Now</a>
+                                </div>
+                            </div>
+                        `
+                    });
+
+                    marker.addListener('click', () => {
+                        // Close any open info windows
+                        markers.forEach(m => m.infoWindow && m.infoWindow.close());
+                        
+                        // Open this info window
+                        infoWindow.open(map, marker);
+                        marker.infoWindow = infoWindow;
+                        
+                        // Update side panel
+                        setSelectedStore(store);
+                    });
+
                     markers.push(marker);
                 });
 
@@ -330,8 +361,8 @@
                         // Count all status values
                         statusCounts[status] = (statusCounts[status] || 0) + 1;
                         
-                        const lat = parseFloat(row[16]); // Column Q - Latitude 
-                        const lng = parseFloat(row[17]); // Column R - Longitude 
+                        const lat = parseFloat(row[16]); // Column Q 
+                        const lng = parseFloat(row[17]); // Column R 
                         
                         if (!isNaN(lat) && !isNaN(lng)) {
                             rowsWithCoordinates++;
@@ -490,23 +521,23 @@
                         </div>
                         
                         {/* Filters */}
-                        <div className="flex flex-col lg:flex-row gap-3 md:gap-4 items-stretch lg:items-center">
+                        <div className="flex flex-col lg:flex-row gap-2 md:gap-3 items-stretch lg:items-center">
                             <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <Search className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                                <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
                                 <input
                                     type="text"
                                     placeholder="Search stores, cities, retailers..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="flex-1 px-3 py-2 border rounded-lg text-base md:text-lg touch-manipulation"
+                                    className="flex-1 px-2 py-1.5 border rounded-lg text-sm touch-manipulation"
                                 />
                             </div>
                             
-                            <div className="flex flex-wrap lg:flex-nowrap items-center gap-3">
+                            <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
                                 <select
                                     value={stateFilter}
                                     onChange={(e) => setStateFilter(e.target.value)}
-                                    className="px-3 py-2 border rounded-lg text-base md:text-lg touch-manipulation min-w-0"
+                                    className="px-2 py-1.5 border rounded-lg text-sm touch-manipulation min-w-0"
                                 >
                                     <option value="all">All States</option>
                                     {uniqueStates.map(state => (
@@ -516,7 +547,7 @@
                                     ))}
                                 </select>
                                 
-                                <div className="text-base md:text-lg text-gray-600 whitespace-nowrap font-medium">
+                                <div className="text-sm text-gray-600 whitespace-nowrap font-medium">
                                     Showing {filteredStores.length} of {stores.length} open
                                 </div>
                             </div>
