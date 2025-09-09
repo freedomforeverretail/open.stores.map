@@ -225,6 +225,15 @@
                         infoWindow.open(map, marker);
                         marker.infoWindow = infoWindow;
                         
+                        // Debug: Log the store data being passed to side panel
+                        console.log('🎯 Marker clicked - Setting selected store:', {
+                            storeName: store.storeName,
+                            storeNumber: store.storeNumber,
+                            city: store.city,
+                            state: store.state,
+                            fullStore: store
+                        });
+                        
                         // Update side panel
                         setSelectedStore(store);
                     });
