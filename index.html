@@ -361,8 +361,8 @@
                         // Count all status values
                         statusCounts[status] = (statusCounts[status] || 0) + 1;
                         
-                        const lat = parseFloat(row[16]); // Column Q 
-                        const lng = parseFloat(row[17]); // Column R 
+                        const lat = parseFloat(row[16]); // Column Q
+                        const lng = parseFloat(row[17]); // Column R
                         
                         if (!isNaN(lat) && !isNaN(lng)) {
                             rowsWithCoordinates++;
@@ -572,49 +572,49 @@
                         
                         {/* Store Details Panel */}
                         {selectedStore && (
-                            <div className="w-full sm:w-80 bg-white shadow-lg border-l overflow-y-auto">
-                                <div className="p-4 md:p-5">
-                                    <div className="flex items-start justify-between mb-4">
+                            <div className="w-full sm:w-64 bg-white shadow-lg border-l overflow-y-auto">
+                                <div className="p-3">
+                                    <div className="flex items-start justify-between mb-2">
                                         <div className="flex-1 min-w-0">
-                                            <h2 className="text-xl md:text-2xl font-bold truncate">{selectedStore.storeName}: {selectedStore.storeNumber}</h2>
-                                            <p className="text-base md:text-lg text-gray-500 mt-1">{selectedStore.retailer}</p>
+                                            <h2 className="text-sm font-bold truncate">{selectedStore.storeName}: {selectedStore.storeNumber}</h2>
+                                            <p className="text-xs text-gray-500 mt-1">{selectedStore.retailer}</p>
                                         </div>
                                         <button
                                             onClick={() => setSelectedStore(null)}
-                                            className="text-gray-400 hover:text-gray-600 text-3xl ml-3 touch-manipulation flex-shrink-0"
+                                            className="text-gray-400 hover:text-gray-600 text-lg ml-2 touch-manipulation flex-shrink-0"
                                         >
                                             ×
                                         </button>
                                     </div>
                                     
-                                    <div className="space-y-4">
+                                    <div className="space-y-2">
                                         <div>
-                                            <div className="text-base font-medium text-gray-700 mb-1">Status</div>
-                                            <div className="inline-block px-3 py-2 rounded-full text-base font-medium bg-green-100" style={{color: '#2C5134'}}>
+                                            <div className="text-xs font-medium text-gray-700 mb-1">Status</div>
+                                            <div className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-green-100" style={{color: '#2C5134'}}>
                                                 Open
                                             </div>
                                         </div>
                                         
                                         <div>
-                                            <div className="text-base font-medium text-gray-700 mb-1">Store Number</div>
-                                            <div className="text-lg text-gray-900">{selectedStore.storeNumber}</div>
+                                            <div className="text-xs font-medium text-gray-700 mb-1">Store Number</div>
+                                            <div className="text-sm text-gray-900">{selectedStore.storeNumber}</div>
                                         </div>
                                         
                                         <div>
-                                            <div className="text-base font-medium text-gray-700 mb-1">Address</div>
-                                            <div className="text-lg text-gray-900 leading-relaxed">
+                                            <div className="text-xs font-medium text-gray-700 mb-1">Address</div>
+                                            <div className="text-sm text-gray-900 leading-relaxed">
                                                 {selectedStore.address}<br/>
                                                 {selectedStore.city}, {selectedStore.state} {selectedStore.zip}
                                             </div>
                                         </div>
 
                                         {/* RESERVE BUTTON */}
-                                        <div className="mt-6 pt-4 border-t">
+                                        <div className="mt-3 pt-2 border-t">
                                             <a
                                                 href={CONFIG.RESERVE_URL}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="w-full text-white px-4 py-3 rounded-lg font-medium text-center block transition-colors text-lg"
+                                                className="w-full text-white px-3 py-2 rounded-lg font-medium text-center block transition-colors text-sm"
                                                 style={{backgroundColor: '#2C5134'}}
                                                 onMouseEnter={(e) => e.target.style.backgroundColor = '#1e3a26'}
                                                 onMouseLeave={(e) => e.target.style.backgroundColor = '#2C5134'}
