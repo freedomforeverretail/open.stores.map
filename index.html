@@ -21,21 +21,12 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // Configuration - UPDATED TO NEW SHEET
+        // Configuration
         const CONFIG = {
-            // NEW Google Sheet ID - MUST USE THIS ONE
             SHEET_ID: '1mzQ6P6REhGzu9LAlhosF1toF-j21jGadjKOppIbsoKc',
-            
-            // NEW Sheet tab name 
             SHEET_NAME: 'public',
-            
-            // API Key
             API_KEY: 'AIzaSyBHcVkUgYLoJnNKpTecRUpAyMHU-T8HqFY',
-            
-            // Auto-refresh interval in minutes
             REFRESH_MINUTES: 3,
-            
-            // Reserve Store URL
             RESERVE_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdgGe9EyaLg8RcbaRdKFTyP3PJnaoR8UrmxKMi0c_MGQ6o8FQ/viewform'
         };
 
@@ -198,7 +189,7 @@
                         }
                     });
 
-                    // REMOVED INFO WINDOW - Only add click listener for side panel
+                    // Add click listener for side panel
                     marker.addListener('click', () => {
                         console.log('🎯 Marker clicked - Setting selected store:', {
                             storeName: store.storeName,
@@ -208,7 +199,6 @@
                             fullStore: store
                         });
                         
-                        // Update side panel only
                         setSelectedStore(store);
                     });
 
@@ -234,11 +224,10 @@
                     setLoading(true);
                     setError('');
 
-                    // NEW SHEET - MUST USE THIS URL
                     const encodedSheetName = encodeURIComponent(CONFIG.SHEET_NAME);
                     let url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodedSheetName}?key=${CONFIG.API_KEY}`;
                     
-                    console.log('🔍 NEW SHEET - Fetching from URL:', url);
+                    console.log('🔍 Fetching from URL:', url);
                     
                     let response = await fetch(url);
                     
@@ -319,10 +308,10 @@
                         address: row[13],
                         city: row[14],
                         state: row[15],
-                        lat: row[16],
-                        lng: row[17],
-                        zip: row[18],
-                        fullRowSlice: row.slice(15, 21)
+                        lat: row[17],
+                        lng: row[18],
+                        zip: row[19],
+                        fullRowSlice: row.slice(15, 20)
                     });
                 }
                 
@@ -337,16 +326,16 @@
                     const row = values[i];
                     totalRowsProcessed++;
                     
-                    if (row.length >= 18) {
+                    if (row.length >= 20) {
                         const rawStatus = row[0]?.toString() || '';
                         const status = rawStatus.trim().toLowerCase();
                         
                         // Count all status values
                         statusCounts[status] = (statusCounts[status] || 0) + 1;
                         
-                        // UPDATED COORDINATES - Column Q (16) and Column R (17)
-                        const lat = parseFloat(row[16]); // Column Q
-                        const lng = parseFloat(row[17]); // Column R
+                        // UPDATED COORDINATES - Column R (17) and Column S (18)
+                        const lat = parseFloat(row[17]); // Column R - Latitude
+                        const lng = parseFloat(row[18]); // Column S - Longitude
                         
                         if (!isNaN(lat) && !isNaN(lng)) {
                             rowsWithCoordinates++;
@@ -371,7 +360,7 @@
                                     address: row[13]?.toString().trim() || '',     // Column N - Street
                                     city: row[14]?.toString().trim() || '',        // Column O - City
                                     state: row[15]?.toString().trim() || '',       // Column P - State
-                                    zip: row[18]?.toString().trim() || '',         // Column S - Zip
+                                    zip: row[19]?.toString().trim() || '',         // Column T - Zip
                                     latitude: lat,
                                     longitude: lng
                                 };
@@ -379,8 +368,8 @@
                             } else {
                                 console.log('❌ Open store without valid coordinates:', {
                                     storeName: row[12],
-                                    lat: row[16],
-                                    lng: row[17]
+                                    lat: row[17],
+                                    lng: row[18]
                                 });
                             }
                         }
@@ -431,7 +420,7 @@
 
             // Initial load and auto-refresh
             useEffect(() => {
-                console.log('🚀 Initial load starting with NEW SHEET...');
+                console.log('🚀 Initial load starting...');
                 fetchFromGoogleSheets();
                 if (CONFIG.REFRESH_MINUTES > 0) {
                     const interval = setInterval(fetchFromGoogleSheets, CONFIG.REFRESH_MINUTES * 60 * 1000);
