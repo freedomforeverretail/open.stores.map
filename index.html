@@ -308,9 +308,9 @@
                         address: row[13],
                         city: row[14],
                         state: row[15],
-                        lat: row[18],
-                        lng: row[19],
-                        zip: row[20],
+                        lat: row[17],
+                        lng: row[18],
+                        zip: row[19],
                         fullRowSlice: row.slice(15, 20)
                     });
                 }
@@ -326,16 +326,16 @@
                     const row = values[i];
                     totalRowsProcessed++;
                     
-                    if (row.length >= 20) {
+                    if (row.length >= 21) {
                         const rawStatus = row[0]?.toString() || '';
                         const status = rawStatus.trim().toLowerCase();
                         
                         // Count all status values
                         statusCounts[status] = (statusCounts[status] || 0) + 1;
                         
-                        // UPDATED COORDINATES - Column R (18) and Column S (19)
-                        const lat = parseFloat(row[18]); // Column S - Latitude
-                        const lng = parseFloat(row[19]); // Column T - Longitude
+                        // UPDATED COORDINATES - Column R (17) and Column S (18)
+                        const lat = parseFloat(row[17]); // Column R - Latitude
+                        const lng = parseFloat(row[18]); // Column S - Longitude
                         
                         if (!isNaN(lat) && !isNaN(lng)) {
                             rowsWithCoordinates++;
@@ -360,7 +360,7 @@
                                     address: row[13]?.toString().trim() || '',     // Column N - Street
                                     city: row[14]?.toString().trim() || '',        // Column O - City
                                     state: row[15]?.toString().trim() || '',       // Column P - State
-                                    zip: row[19]?.toString().trim() || '',         // Column T - Zip
+                                    zip: row[20]?.toString().trim() || '',         // Column U - Zip
                                     latitude: lat,
                                     longitude: lng
                                 };
@@ -368,8 +368,8 @@
                             } else {
                                 console.log('❌ Open store without valid coordinates:', {
                                     storeName: row[12],
-                                    lat: row[18],
-                                    lng: row[19]
+                                    lat: row[17],
+                                    lng: row[18]
                                 });
                             }
                         }
@@ -411,12 +411,12 @@
                 checkGoogleMaps();
             }, []);
 
-            // Update markers when stores or filters change
+            // Update markers when filteredStores changes
             useEffect(() => {
-                if (mapLoaded && stores.length > 0) {
+                if (mapLoaded && filteredStores.length > 0) {
                     addMarkersToMap(filteredStores);
                 }
-            }, [stores, mapLoaded, searchTerm, stateFilter]);
+            }, [mapLoaded, filteredStores]);
 
             // Initial load and auto-refresh
             useEffect(() => {
