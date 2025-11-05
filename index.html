@@ -386,6 +386,41 @@
                 return stores;
             };
 
+            // Calculate filtered stores first (before useEffects that depend on it)
+            const filteredStores = useMemo(() => {
+                let filtered = stores;
+                
+                // Apply search filter
+                if (searchTerm.trim()) {
+                    filtered = filtered.filter(store => {
+                        const searchLower = searchTerm.toLowerCase();
+                        return (
+                            (store.storeName || '').toLowerCase().includes(searchLower) ||
+                            (store.city || '').toLowerCase().includes(searchLower) ||
+                            (store.retailer || '').toLowerCase().includes(searchLower) ||
+                            (store.state || '').toLowerCase().includes(searchLower) ||
+                            (store.storeNumber || '').toLowerCase().includes(searchLower)
+                        );
+                    });
+                }
+                
+                // Apply state filter
+                if (stateFilter !== 'all') {
+                    filtered = filtered.filter(store => store.state === stateFilter);
+                }
+                
+                console.log('🔍 Filtered stores:', {
+                    total: stores.length,
+                    afterSearch: filtered.length,
+                    searchTerm,
+                    stateFilter
+                });
+                
+                return filtered;
+            }, [stores, searchTerm, stateFilter]);
+
+            const uniqueStates = [...new Set(stores.map(store => store.state))].filter(state => state && state.trim() !== '').sort();
+
             // Initialize map when Google Maps API loads
             useEffect(() => {
                 let attempts = 0;
@@ -427,40 +462,6 @@
                     return () => clearInterval(interval);
                 }
             }, []);
-
-            const filteredStores = useMemo(() => {
-                let filtered = stores;
-                
-                // Apply search filter
-                if (searchTerm.trim()) {
-                    filtered = filtered.filter(store => {
-                        const searchLower = searchTerm.toLowerCase();
-                        return (
-                            (store.storeName || '').toLowerCase().includes(searchLower) ||
-                            (store.city || '').toLowerCase().includes(searchLower) ||
-                            (store.retailer || '').toLowerCase().includes(searchLower) ||
-                            (store.state || '').toLowerCase().includes(searchLower) ||
-                            (store.storeNumber || '').toLowerCase().includes(searchLower)
-                        );
-                    });
-                }
-                
-                // Apply state filter
-                if (stateFilter !== 'all') {
-                    filtered = filtered.filter(store => store.state === stateFilter);
-                }
-                
-                console.log('🔍 Filtered stores:', {
-                    total: stores.length,
-                    afterSearch: filtered.length,
-                    searchTerm,
-                    stateFilter
-                });
-                
-                return filtered;
-            }, [stores, searchTerm, stateFilter]);
-
-            const uniqueStates = [...new Set(stores.map(store => store.state))].filter(state => state && state.trim() !== '').sort();
 
             return (
                 <div className="w-full h-screen bg-gray-50 flex flex-col">
