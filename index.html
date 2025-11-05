@@ -326,7 +326,7 @@
                     const row = values[i];
                     totalRowsProcessed++;
                     
-                    if (row.length >= 21) {
+                    if (row.length >= 20) {
                         const rawStatus = row[0]?.toString() || '';
                         const status = rawStatus.trim().toLowerCase();
                         
@@ -360,7 +360,7 @@
                                     address: row[13]?.toString().trim() || '',     // Column N - Street
                                     city: row[14]?.toString().trim() || '',        // Column O - City
                                     state: row[15]?.toString().trim() || '',       // Column P - State
-                                    zip: row[20]?.toString().trim() || '',         // Column U - Zip
+                                    zip: row[19]?.toString().trim() || '',         // Column T - Zip
                                     latitude: lat,
                                     longitude: lng
                                 };
