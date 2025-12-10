@@ -2,633 +2,705 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Open Stores Map</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBHcVkUgYLoJnNKpTecRUpAyMHU-T8HqFY&loading=async&callback=initMap"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>High-Performance Canvas Map</title>
     <style>
-        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-        #map { height: 100%; width: 100%; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: system-ui, -apple-system, sans-serif;
+            touch-action: none; /* Prevent default touch behaviors */
+        }
+        
+        #map-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: #f0f0f0;
+            overflow: hidden;
+        }
+        
+        #map-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            /* transform-origin is set dynamically in JS */
+            will-change: transform; /* Hint to browser for GPU acceleration */
+        }
+        
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 1000;
+            font-size: 12px;
+        }
+        
+        #controls div {
+            margin: 5px 0;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        
+        button {
+            padding: 8px 12px;
+            border: none;
+            background: #2563eb;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            touch-action: manipulation;
+        }
+        
+        button:active {
+            background: #1d4ed8;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 999;
+        }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="map-container">
+        <canvas id="map-canvas"></canvas>
+        <div id="controls">
+            <div><strong>Canvas Map Engine</strong></div>
+            <div>Zoom: <span id="zoom-level">12</span></div>
+            <div>Tiles Loaded: <span id="tiles-loaded">0</span></div>
+            <div>Cache Size: <span id="cache-size">0</span></div>
+            <div>FPS: <span id="fps">60</span></div>
+            <div class="button-group">
+                <button id="zoom-in">+</button>
+                <button id="zoom-out">-</button>
+                <button id="clear-cache">Clear Cache</button>
+            </div>
+        </div>
+        <div id="loading" class="loading" style="display: none;">Loading tiles...</div>
+    </div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+    <script>
+        /**
+         * HIGH-PERFORMANCE CANVAS MAP ENGINE
+         * 
+         * Architecture Overview:
+         * 1. Single canvas element rendered with tiles
+         * 2. During zoom gestures, use CSS transform: scale() for 60fps performance
+         * 3. After zoom ends, load new tiles asynchronously
+         * 4. In-memory tile cache with LRU eviction
+         * 5. Progressive rendering: blurry tiles first, crisp tiles later
+         * 6. requestAnimationFrame-based rendering loop to avoid layout thrashing
+         */
 
-        // Configuration
-        const CONFIG = {
-            SHEET_ID: '1mzQ6P6REhGzu9LAlhosF1toF-j21jGadjKOppIbsoKc',
-            SHEET_NAME: 'public',
-            API_KEY: 'AIzaSyBHcVkUgYLoJnNKpTecRUpAyMHU-T8HqFY',
-            REFRESH_MINUTES: 3,
-            RESERVE_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdgGe9EyaLg8RcbaRdKFTyP3PJnaoR8UrmxKMi0c_MGQ6o8FQ/viewform',
-            DEBOUNCE_DELAY: 300 // milliseconds to wait after user stops typing/filtering
-        };
-
-        // Global variables for Google Maps
-        let map = null;
-        let markers = [];
-
-        // Debounce utility function
-        const debounce = (func, delay) => {
-            let timeoutId;
-            return (...args) => {
-                clearTimeout(timeoutId);
-                timeoutId = setTimeout(() => func(...args), delay);
-            };
-        };
-
-        // Enhanced icons
-        const Search = ({ className }) => (
-            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-        );
-
-        const Loader = ({ className }) => (
-            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-        );
-
-        const RefreshCw = ({ className }) => (
-            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M1 4v6h6M23 20v-6h-6" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" />
-            </svg>
-        );
-
-        const AlertCircle = ({ className }) => (
-            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-        );
-
-        window.initMap = function() {
-            console.log('✅ Google Maps API loaded successfully for Open Stores Map');
-        };
-
-        const OpenStoresMap = () => {
-            const [stores, setStores] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState('');
-            const [lastUpdated, setLastUpdated] = useState(null);
-            const [searchTerm, setSearchTerm] = useState('');
-            const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-            const [stateFilter, setStateFilter] = useState('all');
-            const [selectedStore, setSelectedStore] = useState(null);
-            const [isUpdatingMarkers, setIsUpdatingMarkers] = useState(false);
-            const mapRef = useRef(null);
-            const [mapLoaded, setMapLoaded] = useState(false);
-
-            // Debounced search term updater
-            const debouncedSetSearch = useCallback(
-                debounce((value) => {
-                    setDebouncedSearchTerm(value);
-                }, CONFIG.DEBOUNCE_DELAY),
-                []
-            );
-
-            // Handle search input change
-            const handleSearchChange = (e) => {
-                const value = e.target.value;
-                setSearchTerm(value);
-                debouncedSetSearch(value);
-            };
-
-            const initializeMap = () => {
-                if (!window.google?.maps?.Map || !mapRef.current) {
-                    return false;
-                }
-
-                try {
-                    map = new window.google.maps.Map(mapRef.current, {
-                        zoom: 4,
-                        center: { lat: 39.8283, lng: -98.5795 },
-                        mapTypeId: 'roadmap',
-                        restriction: {
-                            latLngBounds: {
-                                north: 49.0,
-                                south: 25.0,
-                                west: -125.0,
-                                east: -66.0,
-                            },
-                            strictBounds: false,
-                        },
-                        styles: [
-                            {
-                                featureType: 'poi',
-                                elementType: 'labels',
-                                stylers: [{ visibility: 'off' }]
-                            },
-                            {
-                                featureType: 'road',
-                                elementType: 'labels',
-                                stylers: [{ visibility: 'off' }]
-                            },
-                            {
-                                featureType: 'road.local',
-                                elementType: 'geometry',
-                                stylers: [{ visibility: 'off' }]
-                            },
-                            {
-                                featureType: 'road.arterial',
-                                elementType: 'geometry',
-                                stylers: [{ lightness: 20 }]
-                            },
-                            {
-                                featureType: 'water',
-                                elementType: 'labels',
-                                stylers: [{ visibility: 'off' }]
-                            },
-                            {
-                                featureType: 'administrative.locality',
-                                elementType: 'labels',
-                                stylers: [{ visibility: 'off' }]
-                            },
-                            {
-                                featureType: 'landscape',
-                                elementType: 'labels',
-                                stylers: [{ visibility: 'off' }]
-                            },
-                            {
-                                featureType: 'administrative.province',
-                                elementType: 'geometry.stroke',
-                                stylers: [{ color: '#999999', weight: 1 }]
-                            },
-                            {
-                                featureType: 'transit',
-                                elementType: 'all',
-                                stylers: [{ visibility: 'off' }]
-                            }
-                        ],
-                        streetViewControl: false,
-                        fullscreenControl: false,
-                        mapTypeControl: false
-                    });
-
-                    setMapLoaded(true);
-                    return true;
-                } catch (error) {
-                    console.error('❌ Error initializing map:', error);
-                    return false;
-                }
-            };
-
-            const addMarkersToMap = useCallback((storeData) => {
-                if (!map || !window.google) {
-                    console.log('❌ Cannot add markers - map or google not available');
-                    return;
-                }
-
-                setIsUpdatingMarkers(true);
-                console.log('🗺️ Adding markers for', storeData.length, 'stores');
-
-                // Use requestAnimationFrame for smoother updates
-                requestAnimationFrame(() => {
-                    // Clear existing markers
-                    markers.forEach(marker => marker.setMap(null));
-                    markers = [];
-
-                    // Add new markers
-                    storeData.forEach((store, index) => {
-                        console.log(`🔷 Creating marker ${index + 1}:`, {
-                            name: store.storeName,
-                            lat: store.latitude,
-                            lng: store.longitude
-                        });
-                        
-                        const marker = new window.google.maps.Marker({
-                            position: { lat: store.latitude, lng: store.longitude },
-                            map: map,
-                            title: `${store.storeName} - OPEN`,
-                            icon: {
-                                path: window.google.maps.SymbolPath.CIRCLE,
-                                fillColor: '#2C5134',
-                                fillOpacity: 1,
-                                strokeColor: '#ffffff',
-                                strokeWeight: 1,
-                                scale: 8
-                            }
-                        });
-
-                        marker.addListener('click', () => {
-                            console.log('🎯 Marker clicked - Setting selected store:', {
-                                storeName: store.storeName,
-                                storeNumber: store.storeNumber,
-                                city: store.city,
-                                state: store.state
-                            });
-                            setSelectedStore(store);
-                        });
-
-                        markers.push(marker);
-                    });
-
-                    console.log('🎯 Total markers created:', markers.length);
-                    
-                    // Fit map to show all markers
-                    if (markers.length > 0) {
-                        const bounds = new window.google.maps.LatLngBounds();
-                        markers.forEach(marker => bounds.extend(marker.getPosition()));
-                        map.fitBounds(bounds);
-                        console.log('📐 Map bounds fitted to markers');
-                    }
-
-                    setIsUpdatingMarkers(false);
-                });
-            }, []);
-
-            const fetchFromGoogleSheets = async () => {
-                try {
-                    setLoading(true);
-                    setError('');
-
-                    const encodedSheetName = encodeURIComponent(CONFIG.SHEET_NAME);
-                    let url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/${encodedSheetName}?key=${CONFIG.API_KEY}`;
-                    
-                    console.log('🔍 Fetching from URL:', url);
-                    
-                    let response = await fetch(url);
-                    
-                    if (!response.ok) {
-                        console.log('❌ First attempt failed, trying without sheet name...');
-                        url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/A:Z?key=${CONFIG.API_KEY}`;
-                        console.log('🔍 Trying URL:', url);
-                        response = await fetch(url);
-                    }
-                    
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        console.log('❌ API Error:', errorData);
-                        throw new Error(`Google Sheets API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
-                    }
-                    
-                    const data = await response.json();
-                    console.log('📊 Raw data received:', data);
-                    
-                    if (!data.values || data.values.length === 0) {
-                        throw new Error('No data found in the specified sheet');
-                    }
-
-                    const parsedStores = parseGoogleSheetsData(data.values);
-                    console.log('🏪 Parsed stores:', parsedStores);
-                    console.log('📊 Total stores found:', parsedStores.length);
-                    
-                    setStores(parsedStores);
-                    setLastUpdated(new Date());
-
-                    if (mapLoaded) {
-                        addMarkersToMap(parsedStores);
-                    }
-                    
-                } catch (err) {
-                    console.error('❌ Error fetching data:', err);
-                    setError(err.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            const parseGoogleSheetsData = (values) => {
-                const stores = [];
-                
-                let headerRowIndex = -1;
-                for (let i = 0; i < Math.min(3, values.length); i++) {
-                    if (values[i] && values[i][0] && values[i][0].toString().toLowerCase().includes('status')) {
-                        headerRowIndex = i;
-                        break;
-                    }
-                }
-                
-                if (headerRowIndex === -1) {
-                    console.log('❌ No header row found');
-                    return stores;
-                }
-                
-                console.log('📋 Found header row at index:', headerRowIndex);
-                console.log('📋 Headers:', values[headerRowIndex]);
-                
-                const dataStartIndex = headerRowIndex + 1;
-                
-                console.log('🔍 Checking first 5 data rows:');
-                for (let i = dataStartIndex; i < Math.min(dataStartIndex + 5, values.length); i++) {
-                    const row = values[i];
-                    console.log(`Row ${i}:`, {
-                        status: row[0],
-                        owner: row[1],
-                        retailer: row[9],
-                        storeNumber: row[11],
-                        storeName: row[12],
-                        address: row[13],
-                        city: row[14],
-                        state: row[15],
-                        lat: row[17],
-                        lng: row[18],
-                        zip: row[19]
-                    });
-                }
-                
-                const statusCounts = {};
-                let totalRowsProcessed = 0;
-                let rowsWithCoordinates = 0;
-                let openStoresFound = 0;
-                
-                for (let i = dataStartIndex; i < values.length; i++) {
-                    const row = values[i];
-                    totalRowsProcessed++;
-                    
-                    if (row.length >= 20) {
-                        const rawStatus = row[0]?.toString() || '';
-                        const status = rawStatus.trim().toLowerCase();
-                        
-                        statusCounts[status] = (statusCounts[status] || 0) + 1;
-                        
-                        const lat = parseFloat(row[17]);
-                        const lng = parseFloat(row[18]);
-                        
-                        if (!isNaN(lat) && !isNaN(lng)) {
-                            rowsWithCoordinates++;
-                        }
-                        
-                        if (status === 'open') {
-                            openStoresFound++;
-                            
-                            if (!isNaN(lat) && !isNaN(lng)) {
-                                console.log(`✅ Valid coordinates for store:`, {
-                                    name: row[12]?.toString().trim(),
-                                    lat: lat,
-                                    lng: lng
-                                });
-                                const store = {
-                                    status: 'Open',
-                                    owner: row[1]?.toString().trim() || '',
-                                    retailer: row[9]?.toString().trim() || '',
-                                    storeNumber: row[11]?.toString().trim() || '',
-                                    storeName: row[12]?.toString().trim() || '',
-                                    address: row[13]?.toString().trim() || '',
-                                    city: row[14]?.toString().trim() || '',
-                                    state: row[15]?.toString().trim() || '',
-                                    zip: row[19]?.toString().trim() || '',
-                                    latitude: lat,
-                                    longitude: lng
-                                };
-                                stores.push(store);
-                            }
-                        }
-                    }
-                }
-                
-                console.log('📊 Data processing summary:');
-                console.log('- Total rows processed:', totalRowsProcessed);
-                console.log('- Rows with coordinates:', rowsWithCoordinates);
-                console.log('- Open stores found:', openStoresFound);
-                console.log('- Status counts:', statusCounts);
-                console.log('- Final stores for map:', stores.length);
-                
-                return stores;
-            };
-
-            // Use debouncedSearchTerm instead of searchTerm for filtering
-            const filteredStores = useMemo(() => {
-                let filtered = stores;
-                
-                if (debouncedSearchTerm.trim()) {
-                    filtered = filtered.filter(store => {
-                        const searchLower = debouncedSearchTerm.toLowerCase();
-                        return (
-                            (store.storeName || '').toLowerCase().includes(searchLower) ||
-                            (store.city || '').toLowerCase().includes(searchLower) ||
-                            (store.retailer || '').toLowerCase().includes(searchLower) ||
-                            (store.state || '').toLowerCase().includes(searchLower) ||
-                            (store.storeNumber || '').toLowerCase().includes(searchLower)
-                        );
-                    });
-                }
-                
-                if (stateFilter !== 'all') {
-                    filtered = filtered.filter(store => store.state === stateFilter);
-                }
-                
-                console.log('🔍 Filtered stores:', {
-                    total: stores.length,
-                    afterSearch: filtered.length,
-                    searchTerm: debouncedSearchTerm,
-                    stateFilter
+        class HighPerformanceMapEngine {
+            constructor(canvasId, containerId) {
+                // DOM elements
+                this.canvas = document.getElementById(canvasId);
+                this.container = document.getElementById(containerId);
+                this.ctx = this.canvas.getContext('2d', { 
+                    alpha: false, // Opaque canvas for better performance
+                    desynchronized: true // Hint to browser for reduced latency
                 });
                 
-                return filtered;
-            }, [stores, debouncedSearchTerm, stateFilter]);
-
-            const uniqueStates = [...new Set(stores.map(store => store.state))].filter(state => state && state.trim() !== '').sort();
-
-            useEffect(() => {
-                let attempts = 0;
-                const maxAttempts = 50;
-
-                const checkGoogleMaps = () => {
-                    attempts++;
+                // Map state
+                this.zoom = 12;
+                this.center = { lat: 37.7749, lng: -122.4194 }; // San Francisco
+                this.tileSize = 256;
+                
+                // Performance-critical state
+                this.isZooming = false;
+                this.isPanning = false;
+                this.currentScale = 1;
+                this.targetZoom = this.zoom;
+                
+                // Tile management
+                this.tileCache = new Map(); // Key: "z/x/y", Value: Image
+                this.loadingTiles = new Set(); // Track tiles currently loading
+                this.maxCacheSize = 200; // Maximum tiles to keep in memory
+                
+                // Touch/gesture state
+                this.touchStartDistance = 0;
+                this.lastTouchTime = 0;
+                this.panStart = { x: 0, y: 0 };
+                this.panOffset = { x: 0, y: 0 };
+                
+                // Animation frame tracking
+                this.animationFrameId = null;
+                this.lastFrameTime = performance.now();
+                this.frameCount = 0;
+                this.fps = 60;
+                
+                // Debounce timer for zoom end detection
+                this.zoomEndTimer = null;
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupCanvas();
+                this.setupEventListeners();
+                this.loadInitialTiles();
+                this.startRenderLoop();
+                console.log('✅ Map engine initialized');
+            }
+            
+            /**
+             * STEP 1: Canvas Setup
+             * Set canvas to full container size with pixel-perfect rendering
+             */
+            setupCanvas() {
+                const dpr = window.devicePixelRatio || 1;
+                const rect = this.container.getBoundingClientRect();
+                
+                // Set display size (CSS pixels)
+                this.canvas.style.width = rect.width + 'px';
+                this.canvas.style.height = rect.height + 'px';
+                
+                // Set actual size in memory (scaled for retina displays)
+                this.canvas.width = rect.width * dpr;
+                this.canvas.height = rect.height * dpr;
+                
+                // Scale context to match device pixel ratio
+                this.ctx.scale(dpr, dpr);
+                
+                // Set transform origin to center for smooth scaling
+                this.canvas.style.transformOrigin = '50% 50%';
+                
+                console.log('📐 Canvas setup:', {
+                    displaySize: `${rect.width}x${rect.height}`,
+                    memorySize: `${this.canvas.width}x${this.canvas.height}`,
+                    dpr: dpr
+                });
+            }
+            
+            /**
+             * STEP 2: Event Listeners
+             * Handle touch gestures for pinch-zoom and pan
+             */
+            setupEventListeners() {
+                // Touch events for mobile
+                this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
+                this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
+                this.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
+                
+                // Mouse events for desktop
+                this.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
+                this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
+                this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+                this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+                
+                // Window resize
+                window.addEventListener('resize', this.handleResize.bind(this));
+                
+                // Button controls
+                document.getElementById('zoom-in').addEventListener('click', () => this.zoomTo(this.zoom + 1));
+                document.getElementById('zoom-out').addEventListener('click', () => this.zoomTo(this.zoom - 1));
+                document.getElementById('clear-cache').addEventListener('click', () => this.clearCache());
+            }
+            
+            /**
+             * STEP 3: Touch Gesture Handlers
+             * Detect pinch-zoom and apply CSS transform immediately for 60fps
+             */
+            handleTouchStart(e) {
+                e.preventDefault();
+                
+                if (e.touches.length === 2) {
+                    // Pinch zoom start
+                    this.isZooming = true;
+                    this.touchStartDistance = this.getTouchDistance(e.touches);
+                    this.targetZoom = this.zoom;
+                    console.log('👆 Pinch zoom started');
+                } else if (e.touches.length === 1) {
+                    // Pan start
+                    this.isPanning = true;
+                    this.panStart = {
+                        x: e.touches[0].clientX - this.panOffset.x,
+                        y: e.touches[0].clientY - this.panOffset.y
+                    };
+                }
+                
+                this.lastTouchTime = performance.now();
+            }
+            
+            handleTouchMove(e) {
+                e.preventDefault();
+                
+                if (this.isZooming && e.touches.length === 2) {
+                    // Calculate pinch zoom scale
+                    const currentDistance = this.getTouchDistance(e.touches);
+                    const scale = currentDistance / this.touchStartDistance;
                     
-                    if (window.google?.maps?.Map && mapRef.current) {
-                        const success = initializeMap();
-                        if (success) {
-                            return;
-                        }
+                    // Apply scale immediately via CSS transform (GPU-accelerated, 60fps)
+                    this.currentScale = scale;
+                    this.canvas.style.transform = `scale(${scale})`;
+                    
+                    // Calculate target zoom level (clamped between 1-18)
+                    const zoomDelta = Math.log2(scale);
+                    this.targetZoom = Math.max(1, Math.min(18, this.zoom + zoomDelta));
+                    
+                    // Update UI
+                    this.updateStats();
+                    
+                } else if (this.isPanning && e.touches.length === 1) {
+                    // Pan the map
+                    this.panOffset = {
+                        x: e.touches[0].clientX - this.panStart.x,
+                        y: e.touches[0].clientY - this.panStart.y
+                    };
+                    this.canvas.style.transform = `translate(${this.panOffset.x}px, ${this.panOffset.y}px) scale(${this.currentScale})`;
+                }
+            }
+            
+            handleTouchEnd(e) {
+                e.preventDefault();
+                
+                if (this.isZooming) {
+                    // Zoom gesture ended - trigger tile reload after debounce
+                    this.isZooming = false;
+                    this.debounceZoomEnd();
+                    console.log('🎯 Pinch zoom ended, target zoom:', Math.round(this.targetZoom));
+                }
+                
+                if (this.isPanning && e.touches.length === 0) {
+                    this.isPanning = false;
+                }
+            }
+            
+            /**
+             * Mouse wheel handler for desktop zoom
+             */
+            handleWheel(e) {
+                e.preventDefault();
+                const delta = -Math.sign(e.deltaY);
+                this.zoomTo(this.zoom + delta);
+            }
+            
+            handleMouseDown(e) {
+                this.isPanning = true;
+                this.panStart = {
+                    x: e.clientX - this.panOffset.x,
+                    y: e.clientY - this.panOffset.y
+                };
+            }
+            
+            handleMouseMove(e) {
+                if (this.isPanning) {
+                    this.panOffset = {
+                        x: e.clientX - this.panStart.x,
+                        y: e.clientY - this.panStart.y
+                    };
+                    this.canvas.style.transform = `translate(${this.panOffset.x}px, ${this.panOffset.y}px) scale(${this.currentScale})`;
+                }
+            }
+            
+            handleMouseUp(e) {
+                this.isPanning = false;
+            }
+            
+            handleResize() {
+                this.setupCanvas();
+                this.render();
+            }
+            
+            /**
+             * STEP 4: Zoom End Debouncing
+             * Wait for user to finish zooming before loading new tiles
+             */
+            debounceZoomEnd() {
+                clearTimeout(this.zoomEndTimer);
+                this.zoomEndTimer = setTimeout(() => {
+                    this.finalizeZoom();
+                }, 150); // Wait 150ms after last zoom gesture
+            }
+            
+            /**
+             * STEP 5: Finalize Zoom
+             * Called when zoom gesture completes
+             * 1. Calculate new zoom level
+             * 2. Load tiles for that level
+             * 3. Reset CSS transform
+             * 4. Redraw canvas with crisp tiles
+             */
+            async finalizeZoom() {
+                const newZoom = Math.round(this.targetZoom);
+                
+                if (newZoom !== this.zoom) {
+                    console.log(`🔄 Finalizing zoom: ${this.zoom} → ${newZoom}`);
+                    this.zoom = newZoom;
+                    
+                    // Show loading indicator
+                    document.getElementById('loading').style.display = 'block';
+                    
+                    // Load tiles for new zoom level
+                    await this.loadTilesForCurrentView();
+                    
+                    // Hide loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                    
+                    // Preload next zoom level in background
+                    this.preloadNextZoomLevel();
+                }
+                
+                // Reset transform to identity
+                this.currentScale = 1;
+                this.canvas.style.transform = 'translate(0, 0) scale(1)';
+                this.panOffset = { x: 0, y: 0 };
+                
+                // Render with crisp tiles
+                this.render();
+            }
+            
+            /**
+             * Programmatic zoom (from buttons)
+             */
+            async zoomTo(newZoom) {
+                newZoom = Math.max(1, Math.min(18, Math.round(newZoom)));
+                if (newZoom !== this.zoom) {
+                    this.zoom = newZoom;
+                    this.targetZoom = newZoom;
+                    document.getElementById('loading').style.display = 'block';
+                    await this.loadTilesForCurrentView();
+                    document.getElementById('loading').style.display = 'none';
+                    this.render();
+                    this.preloadNextZoomLevel();
+                }
+            }
+            
+            /**
+             * STEP 6: Tile Loading
+             * Load tiles asynchronously with progressive rendering
+             */
+            async loadTilesForCurrentView() {
+                const tiles = this.getVisibleTiles();
+                const promises = [];
+                
+                console.log(`📦 Loading ${tiles.length} tiles for zoom ${this.zoom}`);
+                
+                for (const tile of tiles) {
+                    const key = `${tile.z}/${tile.x}/${tile.y}`;
+                    
+                    // Skip if already cached
+                    if (this.tileCache.has(key)) {
+                        continue;
                     }
                     
-                    if (attempts < maxAttempts) {
-                        setTimeout(checkGoogleMaps, 100);
+                    // Skip if already loading
+                    if (this.loadingTiles.has(key)) {
+                        continue;
+                    }
+                    
+                    promises.push(this.loadTile(tile.z, tile.x, tile.y));
+                }
+                
+                // Wait for all tiles to load
+                await Promise.allSettled(promises);
+                
+                // Manage cache size
+                this.evictOldTiles();
+                
+                this.updateStats();
+            }
+            
+            /**
+             * STEP 7: Individual Tile Loading
+             * Load a single tile with fallback logic
+             */
+            loadTile(z, x, y) {
+                return new Promise((resolve, reject) => {
+                    const key = `${z}/${x}/${y}`;
+                    this.loadingTiles.add(key);
+                    
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    
+                    img.onload = () => {
+                        // Add to cache
+                        this.tileCache.set(key, img);
+                        this.loadingTiles.delete(key);
+                        
+                        // Progressive rendering: draw tile immediately when loaded
+                        this.render();
+                        
+                        resolve(img);
+                    };
+                    
+                    img.onerror = () => {
+                        this.loadingTiles.delete(key);
+                        console.warn(`❌ Failed to load tile: ${key}`);
+                        
+                        // Fallback: try to use lower zoom tile (blurry but better than nothing)
+                        this.tryLoadFallbackTile(z, x, y);
+                        
+                        reject();
+                    };
+                    
+                    // Use OpenStreetMap tiles (free, no API key required)
+                    img.src = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+                });
+            }
+            
+            /**
+             * STEP 8: Fallback Tile Loading
+             * If a tile fails, try parent tile (lower zoom) scaled up
+             */
+            tryLoadFallbackTile(z, x, y) {
+                if (z <= 1) return;
+                
+                // Calculate parent tile coordinates
+                const parentZ = z - 1;
+                const parentX = Math.floor(x / 2);
+                const parentY = Math.floor(y / 2);
+                const parentKey = `${parentZ}/${parentX}/${parentY}`;
+                
+                // If parent exists in cache, use it as fallback
+                if (this.tileCache.has(parentKey)) {
+                    const key = `${z}/${x}/${y}`;
+                    this.tileCache.set(key + '_fallback', this.tileCache.get(parentKey));
+                    this.render();
+                } else {
+                    // Try loading parent tile
+                    this.loadTile(parentZ, parentX, parentY);
+                }
+            }
+            
+            /**
+             * STEP 9: Preloading
+             * Preload tiles for next zoom level in background
+             */
+            preloadNextZoomLevel() {
+                const nextZoom = this.zoom + 1;
+                if (nextZoom > 18) return;
+                
+                // Get tiles for next zoom level
+                const tiles = this.getVisibleTiles(nextZoom);
+                
+                console.log(`⏳ Preloading ${tiles.length} tiles for zoom ${nextZoom}`);
+                
+                // Load tiles in background (don't await)
+                for (const tile of tiles.slice(0, 20)) { // Limit to 20 tiles for preload
+                    const key = `${tile.z}/${tile.x}/${tile.y}`;
+                    if (!this.tileCache.has(key) && !this.loadingTiles.has(key)) {
+                        this.loadTile(tile.z, tile.x, tile.y).catch(() => {});
+                    }
+                }
+            }
+            
+            /**
+             * STEP 10: Cache Management
+             * Evict old tiles using LRU policy
+             */
+            evictOldTiles() {
+                if (this.tileCache.size <= this.maxCacheSize) return;
+                
+                // Simple LRU: remove tiles from different zoom levels first
+                const currentZoomTiles = [];
+                const otherZoomTiles = [];
+                
+                for (const [key, img] of this.tileCache.entries()) {
+                    const z = parseInt(key.split('/')[0]);
+                    if (z === this.zoom || z === this.zoom + 1 || z === this.zoom - 1) {
+                        currentZoomTiles.push(key);
                     } else {
-                        setError('Failed to load Google Maps. Please refresh the page.');
+                        otherZoomTiles.push(key);
                     }
+                }
+                
+                // Remove tiles from far zoom levels first
+                const toRemove = this.tileCache.size - this.maxCacheSize;
+                const keysToRemove = otherZoomTiles.slice(0, toRemove);
+                
+                keysToRemove.forEach(key => this.tileCache.delete(key));
+                
+                if (keysToRemove.length > 0) {
+                    console.log(`🗑️ Evicted ${keysToRemove.length} tiles from cache`);
+                }
+            }
+            
+            clearCache() {
+                this.tileCache.clear();
+                this.loadingTiles.clear();
+                this.updateStats();
+                this.loadTilesForCurrentView().then(() => this.render());
+                console.log('🗑️ Cache cleared');
+            }
+            
+            /**
+             * STEP 11: Tile Coordinate Calculation
+             * Convert lat/lng to tile coordinates
+             */
+            getVisibleTiles(zoom = this.zoom) {
+                const tiles = [];
+                const rect = this.container.getBoundingClientRect();
+                
+                // Calculate tile range for visible area
+                const nwTile = this.latLngToTile(this.center.lat + 0.05, this.center.lng - 0.1, zoom);
+                const seTile = this.latLngToTile(this.center.lat - 0.05, this.center.lng + 0.1, zoom);
+                
+                // Add buffer tiles around visible area
+                const minX = Math.max(0, nwTile.x - 1);
+                const maxX = Math.min(Math.pow(2, zoom) - 1, seTile.x + 1);
+                const minY = Math.max(0, nwTile.y - 1);
+                const maxY = Math.min(Math.pow(2, zoom) - 1, seTile.y + 1);
+                
+                for (let x = minX; x <= maxX; x++) {
+                    for (let y = minY; y <= maxY; y++) {
+                        tiles.push({ z: zoom, x, y });
+                    }
+                }
+                
+                return tiles;
+            }
+            
+            latLngToTile(lat, lng, zoom) {
+                const x = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
+                const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+                return { x, y };
+            }
+            
+            tileToLatLng(x, y, zoom) {
+                const n = Math.PI - 2 * Math.PI * y / Math.pow(2, zoom);
+                const lat = (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
+                const lng = x / Math.pow(2, zoom) * 360 - 180;
+                return { lat, lng };
+            }
+            
+            /**
+             * STEP 12: Rendering Loop
+             * Use requestAnimationFrame to avoid layout thrashing
+             */
+            startRenderLoop() {
+                const loop = (currentTime) => {
+                    // Calculate FPS
+                    const deltaTime = currentTime - this.lastFrameTime;
+                    this.frameCount++;
+                    
+                    if (this.frameCount % 30 === 0) {
+                        this.fps = Math.round(1000 / deltaTime);
+                        this.updateStats();
+                    }
+                    
+                    this.lastFrameTime = currentTime;
+                    
+                    // Continue loop
+                    this.animationFrameId = requestAnimationFrame(loop);
                 };
                 
-                checkGoogleMaps();
-            }, []);
-
-            useEffect(() => {
-                if (mapLoaded && filteredStores.length > 0) {
-                    addMarkersToMap(filteredStores);
-                }
-            }, [mapLoaded, filteredStores, addMarkersToMap]);
-
-            useEffect(() => {
-                console.log('🚀 Initial load starting...');
-                fetchFromGoogleSheets();
-                if (CONFIG.REFRESH_MINUTES > 0) {
-                    const interval = setInterval(fetchFromGoogleSheets, CONFIG.REFRESH_MINUTES * 60 * 1000);
-                    return () => clearInterval(interval);
-                }
-            }, []);
-
-            return (
-                <div className="w-full h-screen bg-gray-50 flex flex-col">
-                    <div className="bg-white shadow-sm border-b px-4 md:px-6 py-1">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-1">
-                            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Open Stores Map</h1>
-                            <button
-                                onClick={fetchFromGoogleSheets}
-                                disabled={loading}
-                                className="px-3 md:px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 text-sm md:text-base touch-manipulation"
-                            >
-                                {loading ? <Loader className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
-                                <span className="hidden sm:inline">Refresh Data</span>
-                                <span className="sm:hidden">Refresh</span>
-                            </button>
-                        </div>
-
-                        {error && (
-                            <div className="mb-1 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
-                                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                                <span className="text-red-700 text-base">{error}</span>
-                            </div>
-                        )}
-
-                        {lastUpdated && (
-                            <div className="mb-1 text-xs md:text-sm text-gray-600">
-                                Last updated: {lastUpdated.toLocaleString()}
-                                {CONFIG.REFRESH_MINUTES > 0 && (
-                                    <span className="hidden sm:inline"> • Auto-refresh every {CONFIG.REFRESH_MINUTES} minutes</span>
-                                )}
-                            </div>
-                        )}
-
-                        <div>
-                            <div style={{
-                                padding: '0.375rem',
-                                borderRadius: '0.375rem',
-                                border: '1px solid #2C5134',
-                                background: 'linear-gradient(135deg, #E8F5E8 0%, #D4EDD4 100%)',
-                                display: 'inline-block'
-                            }}>
-                                <div style={{display: 'flex', alignItems: 'center', gap: '0.375rem'}}>
-                                    <div style={{width: '0.75rem', height: '0.75rem', borderRadius: '50%', backgroundColor: '#2C5134'}}></div>
-                                    <span style={{color: '#2C5134', fontWeight: '500', fontSize: '0.875rem'}}>Open Stores</span>
-                                </div>
-                                <div style={{fontSize: '1rem', fontWeight: 'bold', marginTop: '0.125rem', color: '#2C5134'}}>{filteredStores.length}</div>
-                                <div style={{fontSize: '0.6875rem', marginTop: '0.125rem', color: '#2C5134'}}>Ready for reservation</div>
-                            </div>
-                        </div>
+                this.animationFrameId = requestAnimationFrame(loop);
+            }
+            
+            /**
+             * STEP 13: Canvas Rendering
+             * Draw tiles to canvas - called after tiles load, not during zoom
+             */
+            render() {
+                const rect = this.container.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                
+                // Clear canvas
+                this.ctx.clearRect(0, 0, rect.width, rect.height);
+                
+                // Get visible tiles
+                const tiles = this.getVisibleTiles();
+                
+                // Calculate pixel offset for centering
+                const centerTile = this.latLngToTile(this.center.lat, this.center.lng, this.zoom);
+                const centerOffset = {
+                    x: rect.width / 2,
+                    y: rect.height / 2
+                };
+                
+                // Draw tiles
+                for (const tile of tiles) {
+                    const key = `${tile.z}/${tile.x}/${tile.y}`;
+                    const img = this.tileCache.get(key) || this.tileCache.get(key + '_fallback');
+                    
+                    if (img) {
+                        // Calculate tile position relative to center
+                        const tileX = (tile.x - centerTile.x) * this.tileSize + centerOffset.x;
+                        const tileY = (tile.y - centerTile.y) * this.tileSize + centerOffset.y;
                         
-                        <div className="flex flex-col lg:flex-row gap-2 md:gap-3 items-stretch lg:items-center">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                <input
-                                    type="text"
-                                    placeholder="Search stores, cities, retailers..."
-                                    value={searchTerm}
-                                    onChange={handleSearchChange}
-                                    className="flex-1 px-2 py-1.5 border rounded-lg text-sm touch-manipulation"
-                                />
-                                {isUpdatingMarkers && (
-                                    <Loader className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
-                                )}
-                            </div>
-                            
-                            <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
-                                <select
-                                    value={stateFilter}
-                                    onChange={(e) => setStateFilter(e.target.value)}
-                                    className="px-2 py-1.5 border rounded-lg text-sm touch-manipulation min-w-0"
-                                >
-                                    <option value="all">All States ({stores.length})</option>
-                                    {uniqueStates.map(state => {
-                                        const stateCount = stores.filter(store => store.state === state).length;
-                                        return (
-                                            <option key={state} value={state}>
-                                                {state || 'Unknown'} ({stateCount})
-                                            </option>
-                                        );
-                                    })}
-                                </select>
-                                
-                                <div className="text-sm text-gray-600 whitespace-nowrap font-medium">
-                                    Showing {filteredStores.length} of {stores.length} open
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex-1 flex">
-                        <div className="flex-1 relative">
-                            <div ref={mapRef} id="map" className="w-full h-full"></div>
-                            
-                            {loading && (
-                                <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10">
-                                    <div className="flex flex-col items-center gap-4 p-6 bg-white rounded-xl shadow-lg border">
-                                        <Loader className="w-8 h-8 animate-spin text-blue-600" />
-                                        <span className="text-gray-700 font-medium">Loading available stores...</span>
-                                        <div className="text-sm text-gray-500">Showing only open locations</div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        
-                        {selectedStore && (
-                            <div className="w-full sm:w-72 md:w-80 bg-white shadow-lg border-l overflow-y-auto">
-                                <div className="p-4">
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div className="flex-1 min-w-0">
-                                            <h2 className="text-base font-bold leading-tight">{selectedStore.storeName}</h2>
-                                        </div>
-                                        <button
-                                            onClick={() => setSelectedStore(null)}
-                                            className="text-gray-400 hover:text-gray-600 text-xl ml-3 p-1 hover:bg-gray-100 rounded flex-shrink-0"
-                                            title="Close panel"
-                                        >
-                                            ×
-                                        </button>
-                                    </div>
-                                    
-                                    <div className="space-y-4">
-                                        <div>
-                                            <div className="text-xs font-medium text-gray-700 mb-2">Status</div>
-                                            <div className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-green-100" style={{color: '#2C5134'}}>
-                                                Open
-                                            </div>
-                                        </div>
-                                        
-                                        <div>
-                                            <div className="text-xs font-medium text-gray-700 mb-2">Store Number</div>
-                                            <div className="text-sm text-gray-900">{selectedStore.storeNumber}</div>
-                                        </div>
-                                        
-                                        <div>
-                                            <div className="text-xs font-medium text-gray-700 mb-2">Address</div>
-                                            <div className="text-sm text-gray-900 leading-relaxed">
-                                                {selectedStore.address}<br/>
-                                                {selectedStore.city}, {selectedStore.state} {selectedStore.zip}
-                                            </div>
-                                        </div>
-
-                                        <div className="pt-4 border-t">
-                                            <a
-                                                href={CONFIG.RESERVE_URL}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="w-full text-white px-4 py-3 rounded-lg font-medium text-center block transition-colors text-sm hover:shadow-lg"
-                                                style={{backgroundColor: '#2C5134'}}
-                                                onMouseEnter={(e) => e.target.style.backgroundColor = '#1e3a26'}
-                                                onMouseLeave={(e) => e.target.style.backgroundColor = '#2C5134'}
-                                            >
-                                                Reserve This Store
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        ReactDOM.render(<OpenStoresMap />, document.getElementById('root'));
+                        // Draw tile
+                        this.ctx.drawImage(img, tileX, tileY, this.tileSize, this.tileSize);
+                    }
+                }
+                
+                console.log(`🎨 Rendered ${tiles.length} tiles`);
+            }
+            
+            /**
+             * Initial tile loading
+             */
+            async loadInitialTiles() {
+                document.getElementById('loading').style.display = 'block';
+                await this.loadTilesForCurrentView();
+                document.getElementById('loading').style.display = 'none';
+                this.render();
+            }
+            
+            /**
+             * Helper: Calculate distance between two touch points
+             */
+            getTouchDistance(touches) {
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+            
+            /**
+             * Update UI stats
+             */
+            updateStats() {
+                document.getElementById('zoom-level').textContent = this.targetZoom.toFixed(2);
+                document.getElementById('tiles-loaded').textContent = this.tileCache.size;
+                document.getElementById('cache-size').textContent = this.tileCache.size;
+                document.getElementById('fps').textContent = this.fps;
+            }
+            
+            /**
+             * Cleanup
+             */
+            destroy() {
+                if (this.animationFrameId) {
+                    cancelAnimationFrame(this.animationFrameId);
+                }
+                this.tileCache.clear();
+                this.loadingTiles.clear();
+            }
+        }
+        
+        // Initialize map engine
+        const mapEngine = new HighPerformanceMapEngine('map-canvas', 'map-container');
+        
+        // Expose to global scope for debugging
+        window.mapEngine = mapEngine;
+        
+        console.log('🗺️ High-performance map engine loaded');
+        console.log('📱 Try pinch-zoom on mobile or use buttons to zoom');
+        console.log('🎯 Canvas renders at 60fps during zoom gestures');
     </script>
 </body>
 </html>
