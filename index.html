@@ -8,7 +8,6 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google Maps JavaScript API -->
     <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBHcVkUgYLoJnNKpTecRUpAyMHU-T8HqFY&loading=async&callback=initMap"></script>
     <style>
         body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
@@ -19,7 +18,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
         // Configuration
         const CONFIG = {
@@ -27,12 +26,22 @@
             SHEET_NAME: 'public',
             API_KEY: 'AIzaSyBHcVkUgYLoJnNKpTecRUpAyMHU-T8HqFY',
             REFRESH_MINUTES: 3,
-            RESERVE_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdgGe9EyaLg8RcbaRdKFTyP3PJnaoR8UrmxKMi0c_MGQ6o8FQ/viewform'
+            RESERVE_URL: 'https://docs.google.com/forms/d/e/1FAIpQLSdgGe9EyaLg8RcbaRdKFTyP3PJnaoR8UrmxKMi0c_MGQ6o8FQ/viewform',
+            DEBOUNCE_DELAY: 300 // milliseconds to wait after user stops typing/filtering
         };
 
         // Global variables for Google Maps
         let map = null;
         let markers = [];
+
+        // Debounce utility function
+        const debounce = (func, delay) => {
+            let timeoutId;
+            return (...args) => {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func(...args), delay);
+            };
+        };
 
         // Enhanced icons
         const Search = ({ className }) => (
@@ -60,7 +69,6 @@
             </svg>
         );
 
-        // Initialize Google Map callback
         window.initMap = function() {
             console.log('✅ Google Maps API loaded successfully for Open Stores Map');
         };
@@ -71,10 +79,27 @@
             const [error, setError] = useState('');
             const [lastUpdated, setLastUpdated] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
+            const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
             const [stateFilter, setStateFilter] = useState('all');
             const [selectedStore, setSelectedStore] = useState(null);
+            const [isUpdatingMarkers, setIsUpdatingMarkers] = useState(false);
             const mapRef = useRef(null);
             const [mapLoaded, setMapLoaded] = useState(false);
+
+            // Debounced search term updater
+            const debouncedSetSearch = useCallback(
+                debounce((value) => {
+                    setDebouncedSearchTerm(value);
+                }, CONFIG.DEBOUNCE_DELAY),
+                []
+            );
+
+            // Handle search input change
+            const handleSearchChange = (e) => {
+                const value = e.target.value;
+                setSearchTerm(value);
+                debouncedSetSearch(value);
+            };
 
             const initializeMap = () => {
                 if (!window.google?.maps?.Map || !mapRef.current) {
@@ -84,7 +109,7 @@
                 try {
                     map = new window.google.maps.Map(mapRef.current, {
                         zoom: 4,
-                        center: { lat: 39.8283, lng: -98.5795 }, // Center of US
+                        center: { lat: 39.8283, lng: -98.5795 },
                         mapTypeId: 'roadmap',
                         restriction: {
                             latLngBounds: {
@@ -155,69 +180,69 @@
                 }
             };
 
-            const addMarkersToMap = (storeData) => {
+            const addMarkersToMap = useCallback((storeData) => {
                 if (!map || !window.google) {
                     console.log('❌ Cannot add markers - map or google not available');
                     return;
                 }
 
+                setIsUpdatingMarkers(true);
                 console.log('🗺️ Adding markers for', storeData.length, 'stores');
 
-                // Clear existing markers
-                markers.forEach(marker => marker.setMap(null));
-                markers = [];
+                // Use requestAnimationFrame for smoother updates
+                requestAnimationFrame(() => {
+                    // Clear existing markers
+                    markers.forEach(marker => marker.setMap(null));
+                    markers = [];
 
-                // Add new markers for OPEN stores only
-                storeData.forEach((store, index) => {
-                    console.log(`🔷 Creating marker ${index + 1}:`, {
-                        name: store.storeName,
-                        lat: store.latitude,
-                        lng: store.longitude
-                    });
-                    
-                    const marker = new window.google.maps.Marker({
-                        position: { lat: store.latitude, lng: store.longitude },
-                        map: map,
-                        title: `${store.storeName} - OPEN`,
-                        icon: {
-                            path: window.google.maps.SymbolPath.CIRCLE,
-                            fillColor: '#2C5134',
-                            fillOpacity: 1,
-                            strokeColor: '#ffffff',
-                            strokeWeight: 1,
-                            scale: 8
-                        }
-                    });
-
-                    // Add click listener for side panel
-                    marker.addListener('click', () => {
-                        console.log('🎯 Marker clicked - Setting selected store:', {
-                            storeName: store.storeName,
-                            storeNumber: store.storeNumber,
-                            city: store.city,
-                            state: store.state,
-                            fullStore: store
+                    // Add new markers
+                    storeData.forEach((store, index) => {
+                        console.log(`🔷 Creating marker ${index + 1}:`, {
+                            name: store.storeName,
+                            lat: store.latitude,
+                            lng: store.longitude
                         });
                         
-                        setSelectedStore(store);
+                        const marker = new window.google.maps.Marker({
+                            position: { lat: store.latitude, lng: store.longitude },
+                            map: map,
+                            title: `${store.storeName} - OPEN`,
+                            icon: {
+                                path: window.google.maps.SymbolPath.CIRCLE,
+                                fillColor: '#2C5134',
+                                fillOpacity: 1,
+                                strokeColor: '#ffffff',
+                                strokeWeight: 1,
+                                scale: 8
+                            }
+                        });
+
+                        marker.addListener('click', () => {
+                            console.log('🎯 Marker clicked - Setting selected store:', {
+                                storeName: store.storeName,
+                                storeNumber: store.storeNumber,
+                                city: store.city,
+                                state: store.state
+                            });
+                            setSelectedStore(store);
+                        });
+
+                        markers.push(marker);
                     });
 
-                    markers.push(marker);
-                });
-
-                console.log('🎯 Total markers created:', markers.length);
-                
-                // Fit map to show all open stores
-                if (markers.length > 0) {
-                    const bounds = new window.google.maps.LatLngBounds();
-                    markers.forEach(marker => bounds.extend(marker.getPosition()));
+                    console.log('🎯 Total markers created:', markers.length);
                     
-                    map.fitBounds(bounds);
-                    console.log('📐 Map bounds fitted to markers');
-                } else {
-                    console.log('❌ No markers to fit bounds to');
-                }
-            };
+                    // Fit map to show all markers
+                    if (markers.length > 0) {
+                        const bounds = new window.google.maps.LatLngBounds();
+                        markers.forEach(marker => bounds.extend(marker.getPosition()));
+                        map.fitBounds(bounds);
+                        console.log('📐 Map bounds fitted to markers');
+                    }
+
+                    setIsUpdatingMarkers(false);
+                });
+            }, []);
 
             const fetchFromGoogleSheets = async () => {
                 try {
@@ -231,7 +256,6 @@
                     
                     let response = await fetch(url);
                     
-                    // If that fails, try without sheet name (gets first sheet)
                     if (!response.ok) {
                         console.log('❌ First attempt failed, trying without sheet name...');
                         url = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}/values/A:Z?key=${CONFIG.API_KEY}`;
@@ -259,7 +283,6 @@
                     setStores(parsedStores);
                     setLastUpdated(new Date());
 
-                    // Add markers to map if map is loaded
                     if (mapLoaded) {
                         addMarkersToMap(parsedStores);
                     }
@@ -275,7 +298,6 @@
             const parseGoogleSheetsData = (values) => {
                 const stores = [];
                 
-                // Find the header row
                 let headerRowIndex = -1;
                 for (let i = 0; i < Math.min(3, values.length); i++) {
                     if (values[i] && values[i][0] && values[i][0].toString().toLowerCase().includes('status')) {
@@ -292,10 +314,8 @@
                 console.log('📋 Found header row at index:', headerRowIndex);
                 console.log('📋 Headers:', values[headerRowIndex]);
                 
-                // Process data rows (skip header row)
                 const dataStartIndex = headerRowIndex + 1;
                 
-                // Debug: Check first 5 rows to understand data structure
                 console.log('🔍 Checking first 5 data rows:');
                 for (let i = dataStartIndex; i < Math.min(dataStartIndex + 5, values.length); i++) {
                     const row = values[i];
@@ -310,18 +330,15 @@
                         state: row[15],
                         lat: row[17],
                         lng: row[18],
-                        zip: row[19],
-                        fullRowSlice: row.slice(15, 20)
+                        zip: row[19]
                     });
                 }
                 
-                // Count different status values
                 const statusCounts = {};
                 let totalRowsProcessed = 0;
                 let rowsWithCoordinates = 0;
                 let openStoresFound = 0;
                 
-                // Process all data rows - FILTER FOR OPEN STATUS ONLY
                 for (let i = dataStartIndex; i < values.length; i++) {
                     const row = values[i];
                     totalRowsProcessed++;
@@ -330,18 +347,15 @@
                         const rawStatus = row[0]?.toString() || '';
                         const status = rawStatus.trim().toLowerCase();
                         
-                        // Count all status values
                         statusCounts[status] = (statusCounts[status] || 0) + 1;
                         
-                        // UPDATED COORDINATES - Column R (17) and Column S (18)
-                        const lat = parseFloat(row[17]); // Column R - Latitude
-                        const lng = parseFloat(row[18]); // Column S - Longitude
+                        const lat = parseFloat(row[17]);
+                        const lng = parseFloat(row[18]);
                         
                         if (!isNaN(lat) && !isNaN(lng)) {
                             rowsWithCoordinates++;
                         }
                         
-                        // ONLY INCLUDE OPEN STORES
                         if (status === 'open') {
                             openStoresFound++;
                             
@@ -354,23 +368,17 @@
                                 const store = {
                                     status: 'Open',
                                     owner: row[1]?.toString().trim() || '',
-                                    retailer: row[9]?.toString().trim() || '',  // Column J - Retailer
-                                    storeNumber: row[11]?.toString().trim() || '', // Column L - Store No.
-                                    storeName: row[12]?.toString().trim() || '',   // Column M - Store Name
-                                    address: row[13]?.toString().trim() || '',     // Column N - Street
-                                    city: row[14]?.toString().trim() || '',        // Column O - City
-                                    state: row[15]?.toString().trim() || '',       // Column P - State
-                                    zip: row[19]?.toString().trim() || '',         // Column T - Zip
+                                    retailer: row[9]?.toString().trim() || '',
+                                    storeNumber: row[11]?.toString().trim() || '',
+                                    storeName: row[12]?.toString().trim() || '',
+                                    address: row[13]?.toString().trim() || '',
+                                    city: row[14]?.toString().trim() || '',
+                                    state: row[15]?.toString().trim() || '',
+                                    zip: row[19]?.toString().trim() || '',
                                     latitude: lat,
                                     longitude: lng
                                 };
                                 stores.push(store);
-                            } else {
-                                console.log('❌ Open store without valid coordinates:', {
-                                    storeName: row[12],
-                                    lat: row[17],
-                                    lng: row[18]
-                                });
                             }
                         }
                     }
@@ -386,14 +394,13 @@
                 return stores;
             };
 
-            // Calculate filtered stores first (before useEffects that depend on it)
+            // Use debouncedSearchTerm instead of searchTerm for filtering
             const filteredStores = useMemo(() => {
                 let filtered = stores;
                 
-                // Apply search filter
-                if (searchTerm.trim()) {
+                if (debouncedSearchTerm.trim()) {
                     filtered = filtered.filter(store => {
-                        const searchLower = searchTerm.toLowerCase();
+                        const searchLower = debouncedSearchTerm.toLowerCase();
                         return (
                             (store.storeName || '').toLowerCase().includes(searchLower) ||
                             (store.city || '').toLowerCase().includes(searchLower) ||
@@ -404,7 +411,6 @@
                     });
                 }
                 
-                // Apply state filter
                 if (stateFilter !== 'all') {
                     filtered = filtered.filter(store => store.state === stateFilter);
                 }
@@ -412,16 +418,15 @@
                 console.log('🔍 Filtered stores:', {
                     total: stores.length,
                     afterSearch: filtered.length,
-                    searchTerm,
+                    searchTerm: debouncedSearchTerm,
                     stateFilter
                 });
                 
                 return filtered;
-            }, [stores, searchTerm, stateFilter]);
+            }, [stores, debouncedSearchTerm, stateFilter]);
 
             const uniqueStates = [...new Set(stores.map(store => store.state))].filter(state => state && state.trim() !== '').sort();
 
-            // Initialize map when Google Maps API loads
             useEffect(() => {
                 let attempts = 0;
                 const maxAttempts = 50;
@@ -446,14 +451,12 @@
                 checkGoogleMaps();
             }, []);
 
-            // Update markers when filteredStores changes
             useEffect(() => {
                 if (mapLoaded && filteredStores.length > 0) {
                     addMarkersToMap(filteredStores);
                 }
-            }, [mapLoaded, filteredStores]);
+            }, [mapLoaded, filteredStores, addMarkersToMap]);
 
-            // Initial load and auto-refresh
             useEffect(() => {
                 console.log('🚀 Initial load starting...');
                 fetchFromGoogleSheets();
@@ -465,7 +468,6 @@
 
             return (
                 <div className="w-full h-screen bg-gray-50 flex flex-col">
-                    {/* Header */}
                     <div className="bg-white shadow-sm border-b px-4 md:px-6 py-1">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-1">
                             <h1 className="text-xl md:text-2xl font-bold text-gray-900">Open Stores Map</h1>
@@ -496,7 +498,6 @@
                             </div>
                         )}
 
-                        {/* Open Stores Summary */}
                         <div>
                             <div style={{
                                 padding: '0.375rem',
@@ -514,7 +515,6 @@
                             </div>
                         </div>
                         
-                        {/* Filters */}
                         <div className="flex flex-col lg:flex-row gap-2 md:gap-3 items-stretch lg:items-center">
                             <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -522,9 +522,12 @@
                                     type="text"
                                     placeholder="Search stores, cities, retailers..."
                                     value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onChange={handleSearchChange}
                                     className="flex-1 px-2 py-1.5 border rounded-lg text-sm touch-manipulation"
                                 />
+                                {isUpdatingMarkers && (
+                                    <Loader className="w-4 h-4 animate-spin text-blue-600 flex-shrink-0" />
+                                )}
                             </div>
                             
                             <div className="flex flex-wrap lg:flex-nowrap items-center gap-2">
@@ -552,7 +555,6 @@
                     </div>
 
                     <div className="flex-1 flex">
-                        {/* Google Map */}
                         <div className="flex-1 relative">
                             <div ref={mapRef} id="map" className="w-full h-full"></div>
                             
@@ -567,7 +569,6 @@
                             )}
                         </div>
                         
-                        {/* Store Details Panel */}
                         {selectedStore && (
                             <div className="w-full sm:w-72 md:w-80 bg-white shadow-lg border-l overflow-y-auto">
                                 <div className="p-4">
@@ -605,7 +606,6 @@
                                             </div>
                                         </div>
 
-                                        {/* RESERVE BUTTON */}
                                         <div className="pt-4 border-t">
                                             <a
                                                 href={CONFIG.RESERVE_URL}
